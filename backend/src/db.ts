@@ -21,5 +21,5 @@ export const pool = new Pool({
   ssl: true,
   max: 1,
   idleTimeoutMillis: 60_000,
-  connectionTimeoutMillis: 5_000,
+  connectionTimeoutMillis: 20_000, // Aurora Serverless can take 10-15s to resume from pause
 });

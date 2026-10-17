@@ -1,7 +1,6 @@
 import { pool } from '../db';
 import { body, handle, HttpError, isUuid, json, userId } from '../http';
 
-const EXTEND_HOURS = 2;
 const DENIES_TO_CLOSE = 3;
 
 export const handler = handle(async (event) => {
@@ -14,8 +13,8 @@ export const handler = handle(async (event) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const exists = await client.query('SELECT 1 FROM incidents WHERE id = $1 AND expires_at > now() FOR UPDATE', [id]);
-    if (exists.rowCount === 0) throw new HttpError(404, 'incident not found or expired');
+    const exists = await client.query("SELECT 1 FROM incidents WHERE id = $1 AND status = 'active' FOR UPDATE", [id]);
+    if (exists.rowCount === 0) throw new HttpError(404, 'incident not found or no longer active');
 
     await client.query(
       `INSERT INTO votes (incident_id, user_id, still_there) VALUES ($1, $2, $3)
@@ -23,16 +22,15 @@ export const handler = handle(async (event) => {
       [id, user, stillThere],
     );
 
-    // A confirmation keeps the incident alive; enough "gone" votes net of confirmations close it.
+    // Enough "gone" votes, net of confirmations, deactivate the incident.
     const { rows } = await client.query(
-      `UPDATE incidents SET expires_at = CASE
-         WHEN $2::boolean THEN GREATEST(expires_at, now() + make_interval(hours => $3))
+      `UPDATE incidents SET status = CASE
          WHEN (SELECT COUNT(*) FILTER (WHERE NOT still_there) - COUNT(*) FILTER (WHERE still_there)
-               FROM votes WHERE incident_id = $1) >= $4 THEN now()
-         ELSE expires_at END
+               FROM votes WHERE incident_id = $1) >= $2 THEN 'inactive'
+         ELSE status END
        WHERE id = $1
-       RETURNING id, expires_at`,
-      [id, stillThere, EXTEND_HOURS, DENIES_TO_CLOSE],
+       RETURNING id, status`,
+      [id, DENIES_TO_CLOSE],
     );
     await client.query('COMMIT');
     return json(200, rows[0]);
