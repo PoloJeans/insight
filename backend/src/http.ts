@@ -1,6 +1,7 @@
-import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
+import type { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyResultV2 } from 'aws-lambda';
 
-type Handler = (event: APIGatewayProxyEventV2) => Promise<APIGatewayProxyResultV2>;
+type Event = APIGatewayProxyEventV2WithJWTAuthorizer;
+type Handler = (event: Event) => Promise<APIGatewayProxyResultV2>;
 
 export class HttpError extends Error {
   constructor(
@@ -33,14 +34,14 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const isUuid = (v: unknown): v is string => typeof v === 'string' && UUID.test(v);
 
-// Placeholder identity until Cognito is added: the app sends a stable per-install UUID.
-export const userId = (event: APIGatewayProxyEventV2): string => {
-  const id = event.headers['x-user-id'];
-  if (!isUuid(id)) throw new HttpError(401, 'missing or invalid x-user-id');
+// The `sub` claim of the Cognito token that API Gateway has already verified.
+export const userId = (event: Event): string => {
+  const id = event.requestContext.authorizer.jwt.claims.sub;
+  if (!isUuid(id)) throw new HttpError(401, 'missing user identity');
   return id;
 };
 
-export const body = (event: APIGatewayProxyEventV2): Record<string, unknown> => {
+export const body = (event: Event): Record<string, unknown> => {
   try {
     const parsed = JSON.parse(event.body ?? '');
     if (parsed && typeof parsed === 'object') return parsed;
