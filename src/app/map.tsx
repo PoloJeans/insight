@@ -1,12 +1,13 @@
 /**
  * Map tab: an interactive map that shows the user's location. Long-pressing the map
- * opens a form to report an incident (title, description, type); saving it adds a
- * pin. Incidents live in memory only for now (no database yet).
+ * opens a form to report an incident (title, description, type); saving it writes the
+ * incident to the database through the API and adds a pin.
  */
 
 import * as Location from 'expo-location'; // phone GPS + permission pop-up
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -16,28 +17,16 @@ import {
 } from 'react-native';
 import MapView, { Marker, type LatLng, type Region } from 'react-native-maps';
 
+import { createIncident, type Incident, type IncidentType } from '@/api/incidents';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-// Mirrors the incidents table: type can only be 'crime' or 'fire'.
-type IncidentType = 'crime' | 'fire';
-
 const INCIDENT_TYPES: { value: IncidentType; label: string }[] = [
   { value: 'crime', label: 'Crime' },
   { value: 'fire', label: 'Fire' },
 ];
-
-// One reported incident. Field names match the table columns where they exist;
-// the database will supply the real id, status and created_at later.
-type Incident = {
-  id: string;
-  coordinate: LatLng;
-  title: string;
-  description: string;
-  type: IncidentType;
-};
 
 // Where the map starts (downtown Toronto) before we know where the user is.
 const DEFAULT_REGION: Region = {
@@ -54,7 +43,7 @@ export default function MapScreen() {
   // null = still asking, true = allowed, false = denied.
   const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
 
-  // Incidents shown on the map. In memory only, so they're lost when the app closes.
+  // Incidents saved during this session. Existing ones aren't loaded from the API yet.
   const [incidents, setIncidents] = useState<Incident[]>([]);
 
   // Where the user long-pressed. While this is set, the form is open.
@@ -65,29 +54,45 @@ export default function MapScreen() {
   const [description, setDescription] = useState('');
   const [type, setType] = useState<IncidentType | null>(null);
 
-  // Title and type are required (they're NOT NULL in the table); description is optional.
-  const canSubmit = title.trim().length > 0 && type !== null;
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Title and type are required (the API accepts a blank title, so the form enforces it).
+  const canSubmit = title.trim().length > 0 && type !== null && !submitting;
 
   const closeForm = () => {
+    if (submitting) return;
     setPendingCoordinate(null);
     setTitle('');
     setDescription('');
     setType(null);
+    setSubmitError(null);
   };
 
-  const submitIncident = () => {
+  // Only adds the pin once the API confirms the save; on failure the form stays open
+  // with the user's input so they can retry.
+  const submitIncident = async () => {
     if (!pendingCoordinate || !canSubmit || type === null) return;
-    setIncidents((prev) => [
-      ...prev,
-      {
-        id: `${Date.now()}-${Math.random()}`,
-        coordinate: pendingCoordinate,
-        title: title.trim(),
-        description: description.trim(),
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const saved = await createIncident({
         type,
-      },
-    ]);
-    closeForm();
+        title: title.trim(),
+        description: description.trim() || undefined,
+        lat: pendingCoordinate.latitude,
+        lng: pendingCoordinate.longitude,
+      });
+      setIncidents((prev) => [...prev, saved]);
+      setSubmitting(false);
+      setPendingCoordinate(null);
+      setTitle('');
+      setDescription('');
+      setType(null);
+    } catch (e) {
+      setSubmitting(false);
+      setSubmitError(e instanceof Error ? e.message : 'Could not save the incident.');
+    }
   };
 
   // Read the phone's GPS position and glide the map to it.
@@ -143,7 +148,7 @@ export default function MapScreen() {
         {incidents.map((incident) => (
           <Marker
             key={incident.id}
-            coordinate={incident.coordinate}
+            coordinate={{ latitude: incident.lat, longitude: incident.lng }}
             title={incident.title}
             description={incident.description || undefined}
             pinColor={incident.type === 'fire' ? 'orange' : 'blue'}
@@ -246,12 +251,20 @@ export default function MapScreen() {
               />
             </ThemedView>
 
+            {submitError && (
+              <ThemedText type="small" style={styles.error}>
+                {submitError}
+              </ThemedText>
+            )}
+
             <ThemedView style={styles.actions}>
               <Pressable
                 onPress={closeForm}
+                disabled={submitting}
                 style={({ pressed }) => [
                   styles.button,
                   { backgroundColor: theme.backgroundElement },
+                  submitting && styles.disabled,
                   pressed && styles.pressed,
                 ]}>
                 <ThemedText type="smallBold">Cancel</ThemedText>
@@ -265,9 +278,14 @@ export default function MapScreen() {
                   !canSubmit && styles.disabled,
                   pressed && styles.pressed,
                 ]}>
-                <ThemedText type="smallBold" style={{ color: theme.background }}>
-                  Add to map
-                </ThemedText>
+                {submitting ? (
+                  // The first request after the database idles can take ~15s.
+                  <ActivityIndicator color={theme.background} />
+                ) : (
+                  <ThemedText type="smallBold" style={{ color: theme.background }}>
+                    Add to map
+                  </ThemedText>
+                )}
               </Pressable>
             </ThemedView>
           </ThemedView>
@@ -314,6 +332,9 @@ const styles = StyleSheet.create({
   },
   disabled: {
     opacity: 0.4,
+  },
+  error: {
+    color: '#d33',
   },
   backdrop: {
     flex: 1,
