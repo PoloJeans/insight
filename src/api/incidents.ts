@@ -2,14 +2,17 @@ import { request } from '@/api/client';
 
 export type IncidentType = 'fire' | 'crime';
 
+export type IncidentStatus = 'active' | 'inactive';
+
 export interface Incident {
   id: string;
   type: IncidentType;
+  title: string;
   description: string | null;
+  status: IncidentStatus;
   lat: number;
   lng: number;
   createdAt: string;
-  expiresAt: string;
   /** Meters from the queried point. Only set by listIncidents. */
   distanceM?: number;
   confirms?: number;
@@ -19,11 +22,12 @@ export interface Incident {
 interface IncidentRow {
   id: string;
   type: IncidentType;
+  title: string;
   description: string | null;
+  status: IncidentStatus;
   lat: number;
   lng: number;
   created_at: string;
-  expires_at: string;
   distance_m?: number;
   // Postgres COUNT() comes back as a string.
   confirms?: string | number;
@@ -33,11 +37,12 @@ interface IncidentRow {
 const toIncident = (row: IncidentRow): Incident => ({
   id: row.id,
   type: row.type,
+  title: row.title,
   description: row.description,
+  status: row.status,
   lat: row.lat,
   lng: row.lng,
   createdAt: row.created_at,
-  expiresAt: row.expires_at,
   distanceM: row.distance_m,
   confirms: row.confirms === undefined ? undefined : Number(row.confirms),
   denies: row.denies === undefined ? undefined : Number(row.denies),
@@ -59,20 +64,16 @@ export async function createIncident(input: {
   type: IncidentType;
   lat: number;
   lng: number;
+  title?: string;
   description?: string;
 }): Promise<Incident> {
   return toIncident(await request<IncidentRow>('POST', '/incidents', { body: input }));
 }
 
-/** `stillThere: true` confirms the incident (extends it); `false` reports it gone. */
+/** `stillThere: true` confirms the incident; `false` reports it gone. Enough "gone" votes deactivate it. */
 export async function voteIncident(
   id: string,
   stillThere: boolean,
-): Promise<{ id: string; expiresAt: string }> {
-  const row = await request<{ id: string; expires_at: string }>(
-    'POST',
-    `/incidents/${id}/votes`,
-    { body: { stillThere } },
-  );
-  return { id: row.id, expiresAt: row.expires_at };
+): Promise<{ id: string; status: IncidentStatus }> {
+  return request('POST', `/incidents/${id}/votes`, { body: { stillThere } });
 }

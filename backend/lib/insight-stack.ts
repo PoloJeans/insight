@@ -34,7 +34,7 @@ export class InsightStack extends Stack {
         entry: join(__dirname, '../src/handlers', file),
         runtime: Runtime.NODEJS_22_X,
         memorySize: 256,
-        timeout: Duration.seconds(10),
+        timeout: Duration.seconds(29), // under API Gateway's 30s limit; covers a cold database resume
         logGroup: new LogGroup(this, `${name}Logs`, {
           retention: RetentionDays.ONE_MONTH,
           removalPolicy: RemovalPolicy.DESTROY,

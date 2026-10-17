@@ -11,7 +11,7 @@ export const handler = handle(async (event) => {
   if (!(radius > 0 && radius <= MAX_RADIUS_M)) throw new HttpError(400, `radius must be 1-${MAX_RADIUS_M}`);
 
   const { rows } = await pool.query(
-    `SELECT i.id, i.type, i.description, i.created_at, i.expires_at,
+    `SELECT i.id, i.type, i.title, i.description, i.status, i.created_at,
             ST_Y(i.location::geometry) AS lat, ST_X(i.location::geometry) AS lng,
             ST_Distance(i.location, p.pt) AS distance_m,
             COUNT(*) FILTER (WHERE v.still_there) AS confirms,
@@ -19,7 +19,7 @@ export const handler = handle(async (event) => {
      FROM incidents i
      CROSS JOIN (SELECT ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography AS pt) p
      LEFT JOIN votes v ON v.incident_id = i.id
-     WHERE i.expires_at > now() AND ST_DWithin(i.location, p.pt, $3)
+     WHERE i.status = 'active' AND ST_DWithin(i.location, p.pt, $3)
      GROUP BY i.id, p.pt
      ORDER BY distance_m
      LIMIT 200`,
