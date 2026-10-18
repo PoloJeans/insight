@@ -137,7 +137,9 @@ export default function MapScreen() {
   const selectedAddress = selectedId ? addresses[selectedId] : undefined;
 
   useEffect(() => {
-    if (!selectedIncident || selectedAddress !== undefined) return;
+    // Imported calls carry their own cross streets; geocoding their intersection point
+    // would invent a house number that implies a precise address.
+    if (!selectedIncident || selectedIncident.locationText || selectedAddress !== undefined) return;
     const { id, lat, lng } = selectedIncident;
     Location.reverseGeocodeAsync({ latitude: lat, longitude: lng })
       .then((results) => setAddresses((prev) => ({ ...prev, [id]: formatAddress(results[0]) })))
@@ -331,10 +333,17 @@ export default function MapScreen() {
           <ThemedText type="small" themeColor="textSecondary">
             Reported {formatReportedTime(selectedIncident.createdAt)}
           </ThemedText>
-          {selectedAddress && (
+          {selectedIncident.locationText ? (
             <ThemedText type="small" themeColor="textSecondary">
-              {selectedAddress}
+              {selectedIncident.locationPrecision === 'exact' ? '' : 'Near '}
+              {selectedIncident.locationText}
             </ThemedText>
+          ) : (
+            selectedAddress && (
+              <ThemedText type="small" themeColor="textSecondary">
+                {selectedAddress}
+              </ThemedText>
+            )
           )}
           {selectedIncident.description && (
             <ThemedText type="small" themeColor="textSecondary">

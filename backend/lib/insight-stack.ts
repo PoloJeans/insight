@@ -7,6 +7,8 @@ import { Effect, PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Runtime } from 'aws-cdk-lib/aws-lambda';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
+import { Schedule, ScheduleExpression } from 'aws-cdk-lib/aws-scheduler';
+import { LambdaInvoke } from 'aws-cdk-lib/aws-scheduler-targets';
 import { Construct } from 'constructs';
 import { join } from 'path';
 
@@ -57,9 +59,10 @@ export class InsightStack extends Stack {
       ],
     });
 
-    const route = (name: string, file: string, method: HttpMethod, path: string) => {
+    // A Lambda that can connect to the database. `entry` is relative to backend/src.
+    const dbFunction = (name: string, entry: string) => {
       const fn = new NodejsFunction(this, name, {
-        entry: join(__dirname, '../src/handlers', file),
+        entry: join(__dirname, '../src', entry),
         runtime: Runtime.NODEJS_22_X,
         memorySize: 256,
         timeout: Duration.seconds(29), // under API Gateway's 30s limit; covers a cold database resume
@@ -75,6 +78,11 @@ export class InsightStack extends Stack {
         },
       });
       fn.addToRolePolicy(dbConnect);
+      return fn;
+    };
+
+    const route = (name: string, file: string, method: HttpMethod, path: string) => {
+      const fn = dbFunction(name, `handlers/${file}`);
       api.addRoutes({
         path,
         methods: [method],
@@ -86,6 +94,16 @@ export class InsightStack extends Stack {
     route('ListIncidents', 'list-incidents.ts', HttpMethod.GET, '/incidents');
     route('VoteIncident', 'vote-incident.ts', HttpMethod.POST, '/incidents/{id}/votes');
     route('RegisterDevice', 'register-device.ts', HttpMethod.PUT, '/devices');
+
+    // Imports Toronto Police calls for service. Every 10 minutes rather than 5 so the
+    // database can still pause between runs (it pauses after 5 idle minutes); the feed
+    // keeps about 4 hours of calls, so nothing is missed.
+    new Schedule(this, 'ImportPoliceCallsSchedule', {
+      schedule: ScheduleExpression.rate(Duration.minutes(10)),
+      target: new LambdaInvoke(dbFunction('ImportPoliceCalls', 'jobs/import-police-calls.ts'), {
+        retryAttempts: 0, // the next run picks up anything a failed run missed
+      }),
+    });
 
     new CfnOutput(this, 'ApiUrl', { value: api.apiEndpoint });
     new CfnOutput(this, 'UserPoolId', { value: userPool.userPoolId });
