@@ -294,7 +294,8 @@ const styles = StyleSheet.create({
     left: Spacing.three,
     right: Spacing.three,
     padding: Spacing.three,
-    borderRadius: Spacing.three,
+    borderRadius: 12,
+    boxShadow: '0 4px 16px rgba(0, 0, 0, 0.15)',
   },
   controls: {
     position: 'absolute',
@@ -305,9 +306,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   button: {
+    minHeight: 44,
+    justifyContent: 'center',
     paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.two,
-    borderRadius: Spacing.five,
+    borderRadius: 12,
+    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.12)',
   },
   pressed: {
     opacity: 0.7,
@@ -322,9 +325,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   card: {
-    borderRadius: Spacing.four,
+    borderRadius: 16,
     padding: Spacing.four,
     gap: Spacing.three,
+    boxShadow: '0 12px 32px rgba(0, 0, 0, 0.25)',
   },
   field: {
     gap: Spacing.one,
@@ -336,14 +340,14 @@ const styles = StyleSheet.create({
   typeButton: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: Spacing.two,
-    borderRadius: Spacing.three,
+    paddingVertical: Spacing.three,
+    borderRadius: 12,
     borderWidth: 2,
   },
   input: {
     paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    borderRadius: Spacing.three,
+    paddingVertical: Spacing.three,
+    borderRadius: 12,
     fontSize: 16,
   },
   multiline: {

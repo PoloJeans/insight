@@ -1,6 +1,6 @@
 /**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
+ * Insight design tokens. A restrained black / white / slate palette with a single
+ * authoritative blue accent; red is reserved for fire and emergencies.
  */
 
 import '@/global.css';
@@ -9,18 +9,26 @@ import { Platform } from 'react-native';
 
 export const Colors = {
   light: {
-    text: '#000000',
-    background: '#ffffff',
-    backgroundElement: '#F0F0F3',
-    backgroundSelected: '#E0E1E6',
-    textSecondary: '#60646C',
+    text: '#0B0F14',
+    background: '#F4F5F7',
+    backgroundElement: '#FFFFFF',
+    backgroundSelected: '#E6E9EE',
+    textSecondary: '#5B6573',
+    border: '#DDE1E7',
+    accent: '#1D4ED8',
+    onAccent: '#FFFFFF',
+    danger: '#D92D20',
   },
   dark: {
-    text: '#ffffff',
-    background: '#000000',
-    backgroundElement: '#212225',
-    backgroundSelected: '#2E3135',
-    textSecondary: '#B0B4BA',
+    text: '#F2F4F7',
+    background: '#07090C',
+    backgroundElement: '#12161C',
+    backgroundSelected: '#1C222B',
+    textSecondary: '#8B95A3',
+    border: '#232A34',
+    accent: '#3B82F6',
+    onAccent: '#FFFFFF',
+    danger: '#F04438',
   },
 } as const;
 
@@ -59,6 +67,13 @@ export const Spacing = {
   four: 24,
   five: 32,
   six: 64,
+} as const;
+
+export const Radius = {
+  small: 8,
+  medium: 12,
+  large: 16,
+  pill: 999,
 } as const;
 
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
