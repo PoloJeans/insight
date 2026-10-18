@@ -12,6 +12,7 @@ export const handler = handle(async (event) => {
 
   const { rows } = await pool.query(
     `SELECT i.id, i.type, i.title, i.description, i.status, i.created_at,
+            i.source, i.location_text, i.location_precision,
             ST_Y(i.location::geometry) AS lat, ST_X(i.location::geometry) AS lng,
             ST_Distance(i.location, p.pt) AS distance_m,
             COUNT(*) FILTER (WHERE v.still_there) AS confirms,

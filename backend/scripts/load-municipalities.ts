@@ -1,5 +1,5 @@
 // Loads (or refreshes) the municipalities table from the City of Toronto's
-// "Former Municipality Boundaries" open data. Run after migration 004:
+// "Former Municipality Boundaries" open data. Run after migration 005:
 //   npx tsx scripts/load-municipalities.ts
 import { Signer } from '@aws-sdk/rds-signer';
 import { Client } from 'pg';

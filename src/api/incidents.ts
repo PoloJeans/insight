@@ -5,8 +5,11 @@ export type IncidentType = 'fire' | 'crime';
 
 export type IncidentStatus = 'active' | 'inactive';
 
-/** Who reported it: a user, or an imported Toronto Police / Toronto Fire call. */
+/** Who reported it: an app user, Toronto Police (tps) or Toronto Fire (tfs). */
 export type IncidentSource = 'user' | 'tps' | 'tfs';
+
+/** 'intersection': the point is the nearest intersection, not the exact spot. */
+export type LocationPrecision = 'exact' | 'intersection' | 'area';
 
 export interface Incident {
   id: string;
@@ -14,6 +17,10 @@ export interface Incident {
   title: string;
   description: string | null;
   status: IncidentStatus;
+  source: IncidentSource;
+  /** The feed's own description of the place, e.g. "Keele St & Freeman Rd". Null for user reports. */
+  locationText: string | null;
+  locationPrecision: LocationPrecision;
   lat: number;
   lng: number;
   createdAt: string;
@@ -28,9 +35,6 @@ export interface Incident {
   myVoteAt?: string | null;
   /** Reported by the signed-in user. */
   mine?: boolean;
-  source?: IncidentSource;
-  /** Street description for imported calls, e.g. "Bloor St W & Dufferin St". */
-  locationText?: string | null;
 }
 
 interface IncidentRow {
@@ -42,6 +46,9 @@ interface IncidentRow {
   lat: number;
   lng: number;
   created_at: string;
+  source?: IncidentSource;
+  location_text?: string | null;
+  location_precision?: LocationPrecision;
   distance_m?: number | null;
   // Postgres COUNT() comes back as a string.
   confirms?: string | number;
@@ -50,8 +57,6 @@ interface IncidentRow {
   my_vote?: boolean | null;
   my_vote_at?: string | null;
   mine?: boolean;
-  source?: IncidentSource;
-  location_text?: string | null;
 }
 
 const toIncident = (row: IncidentRow): Incident => ({
@@ -60,6 +65,9 @@ const toIncident = (row: IncidentRow): Incident => ({
   title: row.title,
   description: row.description,
   status: row.status,
+  source: row.source ?? 'user',
+  locationText: row.location_text ?? null,
+  locationPrecision: row.location_precision ?? 'exact',
   lat: row.lat,
   lng: row.lng,
   createdAt: row.created_at,
@@ -70,8 +78,6 @@ const toIncident = (row: IncidentRow): Incident => ({
   myVote: row.my_vote,
   myVoteAt: row.my_vote_at,
   mine: row.mine,
-  source: row.source,
-  locationText: row.location_text,
 });
 
 /** Active incidents within `radiusM` meters (default 5 km, max 25 km), nearest first. */

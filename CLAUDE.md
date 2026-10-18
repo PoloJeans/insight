@@ -38,7 +38,7 @@ backend/             AWS CDK app: API Gateway HTTP API + Lambda handlers -> Auro
   lib/insight-stack.ts, bin/insight.ts
   src/handlers/      create-incident, list-incidents, search-incidents, my-incidents, vote-incident, register-device
   src/incident-query.ts  Shared SELECT for list views (municipality, vote counts, caller's vote)
-  migrations/        001_init … 004_municipalities.sql
+  migrations/        001_init … 005_municipalities.sql (004 = Dylan's external sources)
   scripts/psql.sh    psql with a fresh IAM token
   scripts/load-municipalities.ts  Loads municipality boundaries from Toronto open data (npx tsx)
 ```
@@ -68,7 +68,7 @@ backend/             AWS CDK app: API Gateway HTTP API + Lambda handlers -> Auro
 - **Connecting by hand:** `backend/scripts/psql.sh`, or DBeaver with IAM auth: `aws rds generate-db-auth-token --region us-east-2 --port 5432 --username postgres --hostname <cluster endpoint>` as the password, SSL mode `require`. Tokens expire after 15 minutes (an open connection stays alive). `002_friend_readonly.sql` creates a read-only `friend_readonly` IAM login (no access to `devices`).
 - **Never commit credentials, access keys, auth tokens, or passwords.** Keep `.env` files out of git.
 
-### Schema (`backend/migrations/001`–`004`)
+### Schema (`backend/migrations/001`–`005`)
 
 - `incidents`: `id uuid`, `type text` (`'fire' | 'crime'`, lowercase only), `title text NOT NULL` (API truncates to 100 chars), `description text NULL`, `location geography(Point, 4326)`, `status text NOT NULL DEFAULT 'active'` (`'active' | 'inactive'`), `created_by uuid NOT NULL`, `created_at`. GiST index on `location`, plus a partial GiST index on active rows.
 - **No time-based expiry.** `expires_at` was dropped in `003_status_and_title.sql`. `active` = shown on the map, `inactive` = resolved. If expiry is wanted later, it needs a scheduled job or a query-time rule on `created_at`.
