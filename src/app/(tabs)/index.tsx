@@ -19,7 +19,9 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { SymbolView } from 'expo-symbols';
 import MapView, { Marker, type LatLng, type Region } from 'react-native-maps';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ApiError } from '@/api/client';
 import {
@@ -38,9 +40,10 @@ import {
 } from '@/components/incidents/incident-filters';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { useSession } from '@/hooks/use-session';
 import { useTheme } from '@/hooks/use-theme';
+import { displayDescription } from '@/utils/incident-text';
 import { getCurrentCoords } from '@/utils/location';
 
 const INCIDENT_TYPES: { value: IncidentType; label: string }[] = [
@@ -95,6 +98,10 @@ export default function MapScreen() {
   const { markSignedOut } = useSession();
   const mapRef = useRef<MapView>(null);
 
+  // The tab bar sits over the map, plus the home-indicator area under it on newer phones.
+  const insets = useSafeAreaInsets();
+  const aboveTabBar = { bottom: insets.bottom };
+
   // null = still asking, true = allowed, false = denied.
   const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
 
@@ -108,6 +115,11 @@ export default function MapScreen() {
 
   // A ref, not state: moving the map shouldn't re-render, only change where we fetch.
   const centerRef = useRef<LatLng>(DEFAULT_REGION);
+
+  // Latest known user position, and whether the map is currently centered on it (the
+  // location button is filled while it is, as in Apple Maps).
+  const userLocationRef = useRef<LatLng | null>(null);
+  const [centeredOnUser, setCenteredOnUser] = useState(false);
   // Lets a slow response be dropped if a newer request was started after it.
   const latestRequestRef = useRef(0);
 
@@ -250,6 +262,10 @@ export default function MapScreen() {
       const loc = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
       });
+      userLocationRef.current = {
+        latitude: loc.coords.latitude,
+        longitude: loc.coords.longitude,
+      };
       mapRef.current?.animateToRegion(
         {
           latitude: loc.coords.latitude,
@@ -287,9 +303,21 @@ export default function MapScreen() {
         initialRegion={DEFAULT_REGION}
         showsUserLocation={permissionGranted === true}
         showsCompass
+        onUserLocationChange={(e) => {
+          // Keep the position fresh as the user moves (only fires with showsUserLocation).
+          const coordinate = e.nativeEvent?.coordinate;
+          if (coordinate) userLocationRef.current = coordinate;
+        }}
         onRegionChangeComplete={(region) => {
           // Fires once a pan, zoom or animateToRegion ends: load pins for the new area.
           centerRef.current = { latitude: region.latitude, longitude: region.longitude };
+          // Centered = the user is within 5% of the visible span from the middle.
+          const user = userLocationRef.current;
+          setCenteredOnUser(
+            user !== null &&
+              Math.abs(user.latitude - region.latitude) < region.latitudeDelta * 0.05 &&
+              Math.abs(user.longitude - region.longitude) < region.longitudeDelta * 0.05
+          );
           loadIncidents();
         }}
         onPress={(e) => {
@@ -380,7 +408,7 @@ export default function MapScreen() {
       </ThemedView>
 
       {selectedIncident && (
-        <ThemedView type="backgroundElement" style={styles.incidentCard}>
+        <ThemedView type="backgroundElement" style={[styles.incidentCard, aboveTabBar]}>
           <ThemedView type="backgroundElement" style={styles.incidentHeader}>
             <ThemedText type="smallBold" themeColor="textSecondary">
               {selectedIncident.type === 'fire' ? 'Fire' : 'Crime'}
@@ -415,7 +443,7 @@ export default function MapScreen() {
           )}
           {selectedIncident.description && (
             <ThemedText type="small" themeColor="textSecondary">
-              {selectedIncident.description}
+              {displayDescription(selectedIncident)}
             </ThemedText>
           )}
           {selectedIncident.confirms !== undefined && (
@@ -469,16 +497,28 @@ export default function MapScreen() {
         </ThemedView>
       )}
 
-      <ThemedView style={[styles.controls, selectedIncident && styles.hidden]}>
+      <ThemedView style={[styles.controls, aboveTabBar, selectedIncident && styles.hidden]}>
         {permissionGranted && (
           <Pressable
             onPress={centerOnUser}
+            accessibilityRole="button"
+            accessibilityLabel="My location"
             style={({ pressed }) => [
-              styles.button,
+              styles.locationButton,
               { backgroundColor: theme.backgroundElement },
               pressed && styles.pressed,
             ]}>
-            <ThemedText type="smallBold">My location</ThemedText>
+            {/* The navigation arrow, as in Apple Maps: filled while centered on the user.
+                Android's icon set has no filled variant, so it turns blue there instead. */}
+            <SymbolView
+              name={{
+                ios: centeredOnUser ? 'location.fill' : 'location',
+                android: 'near_me',
+                web: 'near_me',
+              }}
+              tintColor={centeredOnUser && Platform.OS !== 'ios' ? '#007AFF' : theme.text}
+              size={22}
+            />
           </Pressable>
         )}
       </ThemedView>
@@ -644,7 +684,6 @@ const styles = StyleSheet.create({
   controls: {
     position: 'absolute',
     right: Spacing.three,
-    bottom: BottomTabInset + Spacing.three,
     gap: Spacing.two,
     alignItems: 'flex-end',
     backgroundColor: 'transparent',
@@ -656,7 +695,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: Spacing.three,
     right: Spacing.three,
-    bottom: BottomTabInset + Spacing.three,
     padding: Spacing.three,
     borderRadius: Spacing.three,
     gap: Spacing.two,
@@ -686,6 +724,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four,
     paddingVertical: Spacing.two,
     borderRadius: Spacing.five,
+  },
+  locationButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   pressed: {
     opacity: 0.7,
