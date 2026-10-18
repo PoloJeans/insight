@@ -1,9 +1,11 @@
 /**
- * Map tab: an interactive map that shows the user's location. Long-pressing the map
- * opens a form to report an incident (title, description, type); saving it writes the
- * incident to the database through the API and adds a pin.
+ * Map tab: an interactive map that shows the user's location and the active incidents
+ * near the map's center, refreshed every 30 seconds. Long-pressing the map opens a form
+ * to report an incident (title, description, type); saving it writes the incident to
+ * the database through the API and adds a pin.
  */
 
+import { useFocusEffect } from 'expo-router';
 import * as Location from 'expo-location'; // phone GPS + permission pop-up
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -17,10 +19,17 @@ import {
 } from 'react-native';
 import MapView, { Marker, type LatLng, type Region } from 'react-native-maps';
 
-import { createIncident, type Incident, type IncidentType } from '@/api/incidents';
+import { ApiError } from '@/api/client';
+import {
+  createIncident,
+  listIncidents,
+  type Incident,
+  type IncidentType,
+} from '@/api/incidents';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Spacing } from '@/constants/theme';
+import { useSession } from '@/hooks/use-session';
 import { useTheme } from '@/hooks/use-theme';
 
 const INCIDENT_TYPES: { value: IncidentType; label: string }[] = [
@@ -36,15 +45,56 @@ const DEFAULT_REGION: Region = {
   longitudeDelta: 0.05,
 };
 
+const POLL_INTERVAL_MS = 30_000;
+// The API's maximum search radius. It also returns at most 200 incidents, nearest first.
+const SEARCH_RADIUS_M = 25_000;
+
 export default function MapScreen() {
   const theme = useTheme();
+  const { signOut, markSignedOut } = useSession();
   const mapRef = useRef<MapView>(null);
 
   // null = still asking, true = allowed, false = denied.
   const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
 
-  // Incidents saved during this session. Existing ones aren't loaded from the API yet.
+  // Active incidents near the map's center, replaced on every successful fetch.
   const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // A ref, not state: moving the map shouldn't re-render, only change where we fetch.
+  const centerRef = useRef<LatLng>(DEFAULT_REGION);
+  // Lets a slow response be dropped if a newer request was started after it.
+  const latestRequestRef = useRef(0);
+
+  const loadIncidents = useCallback(async () => {
+    const requestId = ++latestRequestRef.current;
+    const { latitude, longitude } = centerRef.current;
+    try {
+      const nearby = await listIncidents({
+        lat: latitude,
+        lng: longitude,
+        radiusM: SEARCH_RADIUS_M,
+      });
+      if (requestId !== latestRequestRef.current) return;
+      setIncidents(nearby);
+      setLoadError(null);
+    } catch (e) {
+      if (requestId !== latestRequestRef.current) return;
+      // Login expired or was revoked: back to the sign-in screen.
+      if (e instanceof ApiError && e.status === 401) return markSignedOut();
+      // Keep the pins we already have; the next poll retries.
+      setLoadError(e instanceof Error ? e.message : 'Could not load incidents.');
+    }
+  }, [markSignedOut]);
+
+  // Fetch now and every 30s while the Map tab is focused; stop when leaving it.
+  useFocusEffect(
+    useCallback(() => {
+      loadIncidents();
+      const timer = setInterval(loadIncidents, POLL_INTERVAL_MS);
+      return () => clearInterval(timer);
+    }, [loadIncidents])
+  );
 
   // Where the user long-pressed. While this is set, the form is open.
   const [pendingCoordinate, setPendingCoordinate] = useState<LatLng | null>(null);
@@ -83,7 +133,8 @@ export default function MapScreen() {
         lat: pendingCoordinate.latitude,
         lng: pendingCoordinate.longitude,
       });
-      setIncidents((prev) => [...prev, saved]);
+      // Show it right away instead of waiting for the next poll.
+      setIncidents((prev) => [...prev.filter((i) => i.id !== saved.id), saved]);
       setSubmitting(false);
       setPendingCoordinate(null);
       setTitle('');
@@ -91,6 +142,7 @@ export default function MapScreen() {
       setType(null);
     } catch (e) {
       setSubmitting(false);
+      if (e instanceof ApiError && e.status === 401) return markSignedOut();
       setSubmitError(e instanceof Error ? e.message : 'Could not save the incident.');
     }
   };
@@ -138,6 +190,11 @@ export default function MapScreen() {
         initialRegion={DEFAULT_REGION}
         showsUserLocation={permissionGranted === true}
         showsCompass
+        onRegionChangeComplete={(region) => {
+          // Fires once a pan, zoom or animateToRegion ends: load pins for the new area.
+          centerRef.current = { latitude: region.latitude, longitude: region.longitude };
+          loadIncidents();
+        }}
         onLongPress={(e) => {
           // Copy the coordinate out of the event right away: React Native clears "e"
           // after this handler returns, so it can't be read later.
@@ -156,13 +213,22 @@ export default function MapScreen() {
         ))}
       </MapView>
 
-      {permissionGranted === false && (
-        <ThemedView type="backgroundElement" style={styles.banner}>
-          <ThemedText type="small">
-            Location access is off. Enable it in Settings to see where you are.
-          </ThemedText>
-        </ThemedView>
-      )}
+      <ThemedView style={styles.banners}>
+        {permissionGranted === false && (
+          <ThemedView type="backgroundElement" style={styles.banner}>
+            <ThemedText type="small">
+              Location access is off. Enable it in Settings to see where you are.
+            </ThemedText>
+          </ThemedView>
+        )}
+        {loadError && (
+          <ThemedView type="backgroundElement" style={styles.banner}>
+            <ThemedText type="small" style={styles.error}>
+              Couldn&apos;t load incidents: {loadError}
+            </ThemedText>
+          </ThemedView>
+        )}
+      </ThemedView>
 
       <ThemedView style={styles.controls}>
         {permissionGranted && (
@@ -176,17 +242,15 @@ export default function MapScreen() {
             <ThemedText type="smallBold">My location</ThemedText>
           </Pressable>
         )}
-        {incidents.length > 0 && (
-          <Pressable
-            onPress={() => setIncidents([])}
-            style={({ pressed }) => [
-              styles.button,
-              { backgroundColor: theme.backgroundElement },
-              pressed && styles.pressed,
-            ]}>
-            <ThemedText type="smallBold">Clear pins</ThemedText>
-          </Pressable>
-        )}
+        <Pressable
+          onPress={signOut}
+          style={({ pressed }) => [
+            styles.button,
+            { backgroundColor: theme.backgroundElement },
+            pressed && styles.pressed,
+          ]}>
+          <ThemedText type="smallBold">Sign out</ThemedText>
+        </Pressable>
       </ThemedView>
 
       {/* Incident form: a dimmed backdrop with a card in the center of the screen.
@@ -306,11 +370,16 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
   },
-  banner: {
+  banners: {
     position: 'absolute',
     top: Spacing.six,
     left: Spacing.three,
     right: Spacing.three,
+    gap: Spacing.two,
+    backgroundColor: 'transparent',
+    pointerEvents: 'none', // let map gestures pass through
+  },
+  banner: {
     padding: Spacing.three,
     borderRadius: Spacing.three,
   },

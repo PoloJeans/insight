@@ -15,18 +15,20 @@ A mobile app (React Native + Expo, run through **Expo Go**) that shows a Google-
 - Tabs live in `src/components/app-tabs.tsx` using `NativeTabs` from `expo-router/unstable-native-tabs`: `index` (Home), `explore` (Explore), `map` (Map, `sf="map" md="map"` icons).
 - Map libraries: `react-native-maps` (in Expo Go, no API key needed there) and `expo-location`.
 - **Must keep working in Expo Go.** Don't add libraries that need a development build without asking first. Known limits: no background location in Expo Go; MapLibre/Mapbox need a dev build; check current docs before suggesting `expo-maps`.
-- `react-native-maps` is native-only; `src/app/map.web.tsx` is the web placeholder.
+- `react-native-maps` is native-only; `src/app/(tabs)/map.web.tsx` is the web placeholder.
 
 ## Current layout
 
 ```
 src/
-  app/map.tsx        Map screen: markers, report-incident form modal, location permission (all in one file)
-  app/map.web.tsx    Web placeholder for the map
-  api/client.ts      fetch wrapper; reads EXPO_PUBLIC_API_URL, sends x-user-id header
+  app/_layout.tsx    Root Stack: Stack.Protected shows (tabs) when signed in, sign-in otherwise
+  app/sign-in.tsx    Cognito sign in / sign up / email-code confirm
+  app/(tabs)/        index, explore, map (+ map.web.tsx placeholder); _layout renders AppTabs
+  hooks/use-session.tsx  SessionProvider/useSession: signedIn state over api/auth.ts
+  api/client.ts      fetch wrapper; reads EXPO_PUBLIC_API_URL, sends the Cognito access token
+  api/auth.ts        Cognito via plain fetch (USER_PASSWORD_AUTH), token refresh; api/storage.ts persists it
   api/incidents.ts   listIncidents / createIncident / voteIncident
   api/devices.ts     registerDevice (push token + location)
-  api/user-id.ts     Placeholder identity: random UUID per install (SecureStore; localStorage on web)
 backend/             AWS CDK app: API Gateway HTTP API + Lambda handlers -> Aurora
   lib/insight-stack.ts, bin/insight.ts
   src/handlers/      create-incident, list-incidents, vote-incident, register-device
@@ -39,7 +41,8 @@ backend/             AWS CDK app: API Gateway HTTP API + Lambda handlers -> Auro
 1. On load it requests foreground location permission. Granted: centers on the user and shows the blue dot. Denied: stays on downtown Toronto and shows a notice.
 2. Long-press stores the coordinate as a pending coordinate, which opens the "Report an incident" modal.
 3. The form collects **type** (required), **title** (required, max 100 chars), and **description** (optional, max 500 chars).
-4. "Add to map" appends the incident to **in-memory state** (fire pins orange, crime pins blue); "Clear pins" empties it. The `id` is temporary and nothing is saved yet. `map.tsx` does not call `src/api/` yet.
+4. "Add to map" calls `createIncident`; the pin is added only after the API confirms. On failure the form stays open with an error.
+5. Active incidents within 25 km of the map center are fetched on focus, after each pan/zoom, and every 30 s while the tab is focused (fire pins orange, crime pins blue). A 401 signs the user out.
 
 ## Gotchas already hit (don't reintroduce)
 
@@ -65,15 +68,14 @@ backend/             AWS CDK app: API Gateway HTTP API + Lambda handlers -> Auro
 - `title` was added with `DEFAULT ''`, and `create-incident` currently accepts a missing or blank title. The app form requires one, but the API doesn't validate it yet.
 - `votes`: `(incident_id, user_id)` PK, `still_there boolean`. Enough "gone" votes, net of confirmations, set the incident `inactive`; voting on an inactive incident returns 404.
 - `devices`: `user_id` PK, `push_token`, `location`, for proximity alerts.
-- `created_by` / `user_id` have **no users table or FK yet**; they come from the per-install UUID in the `x-user-id` header until real auth (Cognito planned).
+- **Auth:** every API route requires a Cognito access token (HTTP API JWT authorizer, user pool `us-east-2_wikWCurHA`). `created_by` / `user_id` are the token's `sub`; there's no users table or FK yet. The app needs `EXPO_PUBLIC_COGNITO_CLIENT_ID` (the `UserPoolClientId` stack output) in `.env`; see `.env.example`.
 - Insert with `ST_SetSRID(ST_MakePoint(lng, lat), 4326)::geography`; read with `ST_X(location::geometry)` (lng) / `ST_Y(location::geometry)` (lat); "nearby" with `ST_DWithin(location, point, meters)`.
 
 ## Next steps (roughly in order)
 
-1. Wire `map.tsx` to `src/api/incidents.ts`: load nearby incidents on mount, and handle submitting, error, and retry states (a failed save must not show a pin as saved).
-2. Expose voting / resolving incidents in the UI.
-3. Validate input in `create-incident` (non-blank title, coordinates in range).
-4. Decide on auth (Cognito) and a users table, then make `created_by` a real foreign key.
+1. Expose voting / resolving incidents in the UI.
+2. Validate input in `create-incident` (non-blank title, coordinates in range).
+3. Add a users table if needed, then make `created_by` a real foreign key.
 
 ## How I like to work
 
