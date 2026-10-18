@@ -1,4 +1,4 @@
-import { getUserId } from '@/api/user-id';
+import { getAccessToken } from '@/api/auth';
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
@@ -18,6 +18,9 @@ export async function request<T>(
 ): Promise<T> {
   if (!BASE_URL) throw new Error('EXPO_PUBLIC_API_URL is not set');
 
+  const token = await getAccessToken();
+  if (!token) throw new ApiError(401, 'not signed in');
+
   const url = new URL(path, BASE_URL);
   for (const [key, value] of Object.entries(options.query ?? {})) {
     url.searchParams.set(key, String(value));
@@ -27,7 +30,7 @@ export async function request<T>(
     method,
     headers: {
       'content-type': 'application/json',
-      'x-user-id': await getUserId(),
+      authorization: `Bearer ${token}`,
     },
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
   });

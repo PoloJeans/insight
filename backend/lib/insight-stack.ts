@@ -1,6 +1,8 @@
 import { CfnOutput, Duration, RemovalPolicy, Stack, StackProps } from 'aws-cdk-lib';
 import { HttpApi, HttpMethod } from 'aws-cdk-lib/aws-apigatewayv2';
+import { HttpUserPoolAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
+import { AccountRecovery, UserPool } from 'aws-cdk-lib/aws-cognito';
 import { Effect, PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Runtime } from 'aws-cdk-lib/aws-lambda';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
@@ -19,7 +21,33 @@ export class InsightStack extends Stack {
   constructor(scope: Construct, id: string, props: InsightStackProps) {
     super(scope, id, props);
 
-    const api = new HttpApi(this, 'Api', { apiName: 'insight' });
+    const userPool = new UserPool(this, 'Users', {
+      selfSignUpEnabled: true,
+      signInAliases: { email: true },
+      signInCaseSensitive: false,
+      autoVerify: { email: true },
+      accountRecovery: AccountRecovery.EMAIL_ONLY,
+      passwordPolicy: { minLength: 8, requireLowercase: true, requireDigits: true },
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+
+    // Public mobile client: no secret. USER_PASSWORD_AUTH lets the app sign in without an SRP library.
+    const userPoolClient = userPool.addClient('MobileClient', {
+      generateSecret: false,
+      authFlows: { userPassword: true },
+      preventUserExistenceErrors: true,
+      enableTokenRevocation: true,
+      accessTokenValidity: Duration.hours(1),
+      idTokenValidity: Duration.hours(1),
+      refreshTokenValidity: Duration.days(30),
+    });
+
+    const api = new HttpApi(this, 'Api', {
+      apiName: 'insight',
+      defaultAuthorizer: new HttpUserPoolAuthorizer('UserPoolAuthorizer', userPool, {
+        userPoolClients: [userPoolClient],
+      }),
+    });
 
     const dbConnect = new PolicyStatement({
       effect: Effect.ALLOW,
@@ -60,5 +88,7 @@ export class InsightStack extends Stack {
     route('RegisterDevice', 'register-device.ts', HttpMethod.PUT, '/devices');
 
     new CfnOutput(this, 'ApiUrl', { value: api.apiEndpoint });
+    new CfnOutput(this, 'UserPoolId', { value: userPool.userPoolId });
+    new CfnOutput(this, 'UserPoolClientId', { value: userPoolClient.userPoolClientId });
   }
 }
