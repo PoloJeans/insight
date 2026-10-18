@@ -92,7 +92,9 @@ export class InsightStack extends Stack {
 
     route('CreateIncident', 'create-incident.ts', HttpMethod.POST, '/incidents');
     route('ListIncidents', 'list-incidents.ts', HttpMethod.GET, '/incidents');
+    route('SearchIncidents', 'search-incidents.ts', HttpMethod.GET, '/incidents/search');
     route('VoteIncident', 'vote-incident.ts', HttpMethod.POST, '/incidents/{id}/votes');
+    route('MyIncidents', 'my-incidents.ts', HttpMethod.GET, '/me/incidents');
     route('RegisterDevice', 'register-device.ts', HttpMethod.PUT, '/devices');
 
     // Imports Toronto Police calls for service. Every 10 minutes rather than 5 so the
