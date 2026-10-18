@@ -1,4 +1,5 @@
 import { pool } from '../db';
+import { formatStreet } from '../sources/street-names';
 import { classifyCall } from '../sources/tps-call-types';
 
 // Toronto Police's public calls-for-service layer. It holds a rolling window of roughly the
@@ -30,25 +31,6 @@ interface FeedResponse {
 
 // "ASSAULT IN PROGRESS" -> "Assault in progress"
 const sentenceCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
-
-// "BROWN'S LINE" -> "Brown's Line" (a plain \b would also capitalize the "s" after the apostrophe),
-// while "O'CONNOR DR" -> "O'Connor Dr".
-const titleCase = (s: string) =>
-  s
-    .toLowerCase()
-    .replace(/(^|[\s-])[a-z]/g, (c) => c.toUpperCase())
-    .replace(/\b([A-Z])'([a-z])/g, (_, a, b) => `${a}'${b.toUpperCase()}`);
-
-const DIRECTIONS: Record<string, string> = { N: 'north', S: 'south', E: 'east', W: 'west' };
-
-// Laneways are described relative to two streets: "LN N HARBORD E OSSINGTON" is the lane
-// north of Harbord and east of Ossington.
-const formatStreet = (street: string) => {
-  const lane = /^LN ([NSEW]) (.+) ([NSEW]) (.+)$/.exec(street);
-  if (!lane) return titleCase(street);
-  const [, dir1, street1, dir2, street2] = lane;
-  return `Lane ${DIRECTIONS[dir1]} of ${titleCase(street1)}, ${DIRECTIONS[dir2]} of ${titleCase(street2)}`;
-};
 
 // "KEELE ST - FREEMAN RD" -> "Keele St & Freeman Rd"
 const formatCrossStreets = (s: string) => s.split(' - ').map(formatStreet).join(' & ');

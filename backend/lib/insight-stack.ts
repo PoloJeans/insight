@@ -107,6 +107,15 @@ export class InsightStack extends Stack {
       }),
     });
 
+    // Imports Toronto Fire active incidents on the same 10-minute cycle. Needs the
+    // intersections table (migration 006 + scripts/load-intersections.ts) to place them.
+    new Schedule(this, 'ImportFireCallsSchedule', {
+      schedule: ScheduleExpression.rate(Duration.minutes(10)),
+      target: new LambdaInvoke(dbFunction('ImportFireCalls', 'jobs/import-fire-calls.ts'), {
+        retryAttempts: 0,
+      }),
+    });
+
     new CfnOutput(this, 'ApiUrl', { value: api.apiEndpoint });
     new CfnOutput(this, 'UserPoolId', { value: userPool.userPoolId });
     new CfnOutput(this, 'UserPoolClientId', { value: userPoolClient.userPoolClientId });
