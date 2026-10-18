@@ -153,3 +153,9 @@ export async function getMyIncidents(
   );
   return { created: created.map(toIncident), voted: voted.map(toIncident) };
 }
+
+/** Deletes one of the signed-in user's own reports. The row is kept server-side (set
+ *  inactive and marked removed), but it no longer shows anywhere in the app. */
+export async function deleteIncident(id: string): Promise<void> {
+  await request('DELETE', `/incidents/${id}`);
+}

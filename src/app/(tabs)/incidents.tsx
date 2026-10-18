@@ -6,7 +6,7 @@
 
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
-import { FlatList, RefreshControl, StyleSheet, View } from 'react-native';
+import { FlatList, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ApiError } from '@/api/client';
@@ -24,6 +24,7 @@ import { BottomTabInset, Spacing } from '@/constants/theme';
 import { useSession } from '@/hooks/use-session';
 import { useTheme } from '@/hooks/use-theme';
 import { getCurrentCoords, type Coords } from '@/utils/location';
+import { showOnMap } from '@/utils/map-focus';
 
 // Distances are measured from here when location is off.
 const DOWNTOWN_TORONTO: Coords = { lat: 43.6532, lng: -79.3832 };
@@ -105,7 +106,15 @@ export default function IncidentsScreen() {
         <FlatList
           data={incidents ?? []}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <IncidentCard incident={item} />}
+          renderItem={({ item }) => (
+            <Pressable
+              onPress={() => showOnMap(item)}
+              accessibilityRole="button"
+              accessibilityHint="Shows this incident on the map"
+              style={({ pressed }) => pressed && styles.pressed}>
+              <IncidentCard incident={item} />
+            </Pressable>
+          )}
           contentContainerStyle={styles.list}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.text} />
@@ -147,6 +156,9 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     paddingHorizontal: Spacing.three,
     paddingBottom: BottomTabInset + Spacing.four,
+  },
+  pressed: {
+    opacity: 0.7,
   },
   empty: {
     textAlign: 'center',

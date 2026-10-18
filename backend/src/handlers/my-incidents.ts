@@ -5,7 +5,7 @@ import { GROUP_BY_INCIDENT, selectIncidents, SqlParams } from '../incident-query
 const LIMIT = 100;
 
 // GET /me/incidents: the Profile tab. Incidents the caller reported and incidents they
-// voted on, active or resolved, newest first. Optional lat/lng adds distances.
+// voted on, active or resolved (but not deleted), newest first. Optional lat/lng adds distances.
 export const handler = handle(async (event) => {
   const user = userId(event);
   const q = event.queryStringParameters ?? {};
@@ -19,7 +19,7 @@ export const handler = handle(async (event) => {
   // Sequential: the pool holds a single connection.
   const createdRows = await pool.query(
     `${createdQuery.select}
-     WHERE i.created_by = ${createdQuery.userSql}
+     WHERE i.created_by = ${createdQuery.userSql} AND i.removed_at IS NULL
      ${GROUP_BY_INCIDENT}
      ORDER BY i.created_at DESC
      LIMIT ${LIMIT}`,
@@ -27,7 +27,7 @@ export const handler = handle(async (event) => {
   );
   const votedRows = await pool.query(
     `${votedQuery.select}
-     WHERE mv.user_id IS NOT NULL
+     WHERE mv.user_id IS NOT NULL AND i.removed_at IS NULL
      ${GROUP_BY_INCIDENT}
      ORDER BY mv.created_at DESC
      LIMIT ${LIMIT}`,

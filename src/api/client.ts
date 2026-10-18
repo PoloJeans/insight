@@ -12,7 +12,7 @@ export class ApiError extends Error {
 }
 
 export async function request<T>(
-  method: 'GET' | 'POST' | 'PUT',
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
   path: string,
   options: { query?: Record<string, string | number>; body?: unknown } = {},
 ): Promise<T> {

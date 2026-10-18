@@ -45,6 +45,7 @@ import { useSession } from '@/hooks/use-session';
 import { useTheme } from '@/hooks/use-theme';
 import { displayDescription } from '@/utils/incident-text';
 import { getCurrentCoords } from '@/utils/location';
+import { subscribeToMapFocus } from '@/utils/map-focus';
 
 const INCIDENT_TYPES: { value: IncidentType; label: string }[] = [
   { value: 'crime', label: 'Crime' },
@@ -186,6 +187,32 @@ export default function MapScreen() {
     setSelectedIncident(incident);
     setVoteError(null);
   };
+
+  // Tapping a card in the Incidents tab lands here: center on it and open its popup.
+  useEffect(
+    () =>
+      subscribeToMapFocus((incident) => {
+        setSelectedIncident(incident);
+        setVoteError(null);
+        mapRef.current?.animateToRegion(
+          {
+            latitude: incident.lat,
+            longitude: incident.lng,
+            latitudeDelta: 0.01,
+            longitudeDelta: 0.01,
+          },
+          600
+        );
+      }),
+    []
+  );
+
+  // The selected incident always gets a pin, even if the current filters hide it
+  // (e.g. a resolved one opened from the Incidents tab).
+  const markers =
+    selectedIncident && !incidents.some((i) => i.id === selectedIncident.id)
+      ? [...incidents, selectedIncident]
+      : incidents;
 
   // "Not there" marks the incident inactive in the database; its pin disappears on the
   // next poll. "Still there" is recorded but leaves the incident as is.
@@ -332,7 +359,7 @@ export default function MapScreen() {
           if (!coordinate) return;
           setPendingCoordinate(coordinate); // opens the form
         }}>
-        {incidents.map((incident) => (
+        {markers.map((incident) => (
           <Marker
             key={incident.id}
             coordinate={{ latitude: incident.lat, longitude: incident.lng }}

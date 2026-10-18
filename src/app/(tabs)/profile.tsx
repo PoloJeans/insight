@@ -5,12 +5,13 @@
 
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
-import { Pressable, RefreshControl, SectionList, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, RefreshControl, SectionList, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ApiError } from '@/api/client';
-import { getMyIncidents, type Incident } from '@/api/incidents';
+import { deleteIncident, getMyIncidents, type Incident } from '@/api/incidents';
 import { IncidentCard } from '@/components/incidents/incident-card';
+import { SwipeToDelete } from '@/components/incidents/swipe-to-delete';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Spacing } from '@/constants/theme';
@@ -55,6 +56,31 @@ export default function ProfileScreen() {
     }, [load])
   );
 
+  // Soft delete: the server keeps the row but stops returning it. Resolves to whether the
+  // card should disappear.
+  const removeReport = async (incident: Incident): Promise<boolean> => {
+    try {
+      await deleteIncident(incident.id);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) {
+        markSignedOut();
+        return false;
+      }
+      // 404: already deleted (e.g. from another device), so just drop the card.
+      if (!(e instanceof ApiError && e.status === 404)) {
+        Alert.alert("Couldn't delete", e instanceof Error ? e.message : 'Please try again.');
+        return false;
+      }
+    }
+    setMine((prev) =>
+      prev && {
+        created: prev.created.filter((i) => i.id !== incident.id),
+        voted: prev.voted.filter((i) => i.id !== incident.id),
+      }
+    );
+    return true;
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
     await load();
@@ -64,7 +90,7 @@ export default function ProfileScreen() {
   const sections: Section[] = [
     {
       key: 'created',
-      title: 'Reported by you',
+      title: 'Reported by you · swipe left to delete',
       empty: 'Long-press the map to report an incident.',
       data: mine?.created ?? [],
     },
@@ -100,7 +126,16 @@ export default function ProfileScreen() {
         <SectionList
           sections={sections}
           keyExtractor={(item, index) => `${item.id}-${index}`}
-          renderItem={({ item }) => <IncidentCard incident={item} />}
+          renderItem={({ item, section }) =>
+            // Only your own reports can be deleted.
+            section.key === 'created' ? (
+              <SwipeToDelete onDelete={() => removeReport(item)}>
+                <IncidentCard incident={item} />
+              </SwipeToDelete>
+            ) : (
+              <IncidentCard incident={item} />
+            )
+          }
           renderSectionHeader={({ section }) => (
             <ThemedView style={styles.sectionHeader}>
               <ThemedText type="smallBold">

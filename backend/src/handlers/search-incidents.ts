@@ -16,7 +16,8 @@ export const handler = handle(async (event) => {
   const point = q.lat !== undefined || q.lng !== undefined ? coords(Number(q.lat), Number(q.lng)) : undefined;
   const sql = new SqlParams();
   const { select, pointSql } = selectIncidents(sql, user, point);
-  const where: string[] = [];
+  // Reports their author deleted never show, even with includeResolved.
+  const where: string[] = ['i.removed_at IS NULL'];
 
   if (q.includeResolved !== 'true') where.push(`i.status = 'active'`);
 
