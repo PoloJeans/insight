@@ -1,8 +1,6 @@
 import { pool } from '../db';
 import { body, handle, HttpError, isUuid, json, userId } from '../http';
 
-const DENIES_TO_CLOSE = 3;
-
 export const handler = handle(async (event) => {
   const user = userId(event);
   const id = event.pathParameters?.id;
@@ -22,15 +20,12 @@ export const handler = handle(async (event) => {
       [id, user, stillThere],
     );
 
-    // Enough "gone" votes, net of confirmations, deactivate the incident.
+    // A single "not there" vote resolves the incident; "still there" leaves it as is.
     const { rows } = await client.query(
-      `UPDATE incidents SET status = CASE
-         WHEN (SELECT COUNT(*) FILTER (WHERE NOT still_there) - COUNT(*) FILTER (WHERE still_there)
-               FROM votes WHERE incident_id = $1) >= $2 THEN 'inactive'
-         ELSE status END
+      `UPDATE incidents SET status = CASE WHEN $2::boolean THEN status ELSE 'inactive' END
        WHERE id = $1
        RETURNING id, status`,
-      [id, DENIES_TO_CLOSE],
+      [id, stillThere],
     );
     await client.query('COMMIT');
     return json(200, rows[0]);

@@ -66,16 +66,15 @@ backend/             AWS CDK app: API Gateway HTTP API + Lambda handlers -> Auro
 - `incidents`: `id uuid`, `type text` (`'fire' | 'crime'`, lowercase only), `title text NOT NULL` (API truncates to 100 chars), `description text NULL`, `location geography(Point, 4326)`, `status text NOT NULL DEFAULT 'active'` (`'active' | 'inactive'`), `created_by uuid NOT NULL`, `created_at`. GiST index on `location`, plus a partial GiST index on active rows.
 - **No time-based expiry.** `expires_at` was dropped in `003_status_and_title.sql`. `active` = shown on the map, `inactive` = resolved. If expiry is wanted later, it needs a scheduled job or a query-time rule on `created_at`.
 - `title` was added with `DEFAULT ''`, and `create-incident` currently accepts a missing or blank title. The app form requires one, but the API doesn't validate it yet.
-- `votes`: `(incident_id, user_id)` PK, `still_there boolean`. Enough "gone" votes, net of confirmations, set the incident `inactive`; voting on an inactive incident returns 404.
+- `votes`: `(incident_id, user_id)` PK, `still_there boolean`. A single "not there" vote sets the incident `inactive` (its pin disappears on the next 30 s poll); "still there" is recorded but changes nothing. Voting on an inactive incident returns 404. Tapping a pin opens a card with both buttons.
 - `devices`: `user_id` PK, `push_token`, `location`, for proximity alerts.
 - **Auth:** every API route requires a Cognito access token (HTTP API JWT authorizer, user pool `us-east-2_wikWCurHA`). `created_by` / `user_id` are the token's `sub`; there's no users table or FK yet. The app needs `EXPO_PUBLIC_COGNITO_CLIENT_ID` (the `UserPoolClientId` stack output) in `.env`; see `.env.example`.
 - Insert with `ST_SetSRID(ST_MakePoint(lng, lat), 4326)::geography`; read with `ST_X(location::geometry)` (lng) / `ST_Y(location::geometry)` (lat); "nearby" with `ST_DWithin(location, point, meters)`.
 
 ## Next steps (roughly in order)
 
-1. Expose voting / resolving incidents in the UI.
-2. Validate input in `create-incident` (non-blank title, coordinates in range).
-3. Add a users table if needed, then make `created_by` a real foreign key.
+1. Validate input in `create-incident` (non-blank title, coordinates in range).
+2. Add a users table if needed, then make `created_by` a real foreign key.
 
 ## How I like to work
 

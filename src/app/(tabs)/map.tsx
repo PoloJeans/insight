@@ -23,6 +23,7 @@ import { ApiError } from '@/api/client';
 import {
   createIncident,
   listIncidents,
+  voteIncident,
   type Incident,
   type IncidentType,
 } from '@/api/incidents';
@@ -99,14 +100,30 @@ export default function MapScreen() {
   // The pin the user tapped. While this is set, its card with the vote buttons is shown.
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
 
-  // TODO: call voteIncident(incident.id, true), then refresh the pins.
-  const markStillThere = (incident: Incident) => {
-    setSelectedIncident(null);
+  const [voting, setVoting] = useState(false);
+  const [voteError, setVoteError] = useState<string | null>(null);
+
+  const selectIncident = (incident: Incident | null) => {
+    setSelectedIncident(incident);
+    setVoteError(null);
   };
 
-  // TODO: call voteIncident(incident.id, false), then refresh the pins.
-  const markNotThere = (incident: Incident) => {
-    setSelectedIncident(null);
+  // "Not there" marks the incident inactive in the database; its pin disappears on the
+  // next poll. "Still there" is recorded but leaves the incident as is.
+  const vote = async (incident: Incident, stillThere: boolean) => {
+    setVoting(true);
+    setVoteError(null);
+    try {
+      await voteIncident(incident.id, stillThere);
+      setSelectedIncident(null);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return markSignedOut();
+      // 404: someone else already resolved it. The next poll removes the pin.
+      if (e instanceof ApiError && e.status === 404) return setSelectedIncident(null);
+      setVoteError(e instanceof Error ? e.message : 'Could not send your vote.');
+    } finally {
+      setVoting(false);
+    }
   };
 
   // Where the user long-pressed. While this is set, the form is open.
@@ -211,7 +228,7 @@ export default function MapScreen() {
         onPress={(e) => {
           // On iOS a marker tap also reaches the map; only a tap on empty map closes the card.
           if (e.nativeEvent?.action === 'marker-press') return;
-          setSelectedIncident(null);
+          selectIncident(null);
         }}
         onLongPress={(e) => {
           // Copy the coordinate out of the event right away: React Native clears "e"
@@ -225,7 +242,7 @@ export default function MapScreen() {
             key={incident.id}
             coordinate={{ latitude: incident.lat, longitude: incident.lng }}
             pinColor={incident.type === 'fire' ? 'orange' : 'blue'}
-            onPress={() => setSelectedIncident(incident)}
+            onPress={() => selectIncident(incident)}
           />
         ))}
       </MapView>
@@ -254,7 +271,7 @@ export default function MapScreen() {
               {selectedIncident.type === 'fire' ? 'Fire' : 'Crime'}
             </ThemedText>
             <Pressable
-              onPress={() => setSelectedIncident(null)}
+              onPress={() => selectIncident(null)}
               hitSlop={12}
               style={({ pressed }) => pressed && styles.pressed}>
               <ThemedText type="smallBold" themeColor="textSecondary">
@@ -277,26 +294,40 @@ export default function MapScreen() {
             </ThemedText>
           )}
 
+          {voteError && (
+            <ThemedText type="small" style={styles.error}>
+              {voteError}
+            </ThemedText>
+          )}
+
           <ThemedView type="backgroundElement" style={styles.voteRow}>
             <Pressable
-              onPress={() => markNotThere(selectedIncident)}
+              onPress={() => vote(selectedIncident, false)}
+              disabled={voting}
               style={({ pressed }) => [
                 styles.voteButton,
                 { backgroundColor: theme.backgroundSelected },
+                voting && styles.disabled,
                 pressed && styles.pressed,
               ]}>
               <ThemedText type="smallBold">Not there</ThemedText>
             </Pressable>
             <Pressable
-              onPress={() => markStillThere(selectedIncident)}
+              onPress={() => vote(selectedIncident, true)}
+              disabled={voting}
               style={({ pressed }) => [
                 styles.voteButton,
                 { backgroundColor: theme.text },
+                voting && styles.disabled,
                 pressed && styles.pressed,
               ]}>
-              <ThemedText type="smallBold" style={{ color: theme.background }}>
-                Still there
-              </ThemedText>
+              {voting ? (
+                <ActivityIndicator color={theme.background} />
+              ) : (
+                <ThemedText type="smallBold" style={{ color: theme.background }}>
+                  Still there
+                </ThemedText>
+              )}
             </Pressable>
           </ThemedView>
         </ThemedView>
