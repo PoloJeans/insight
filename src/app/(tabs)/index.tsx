@@ -1,6 +1,7 @@
 /**
- * Map tab: an interactive map that shows the user's location and the active incidents
- * near the map's center, refreshed every 30 seconds. Long-pressing the map opens a form
+ * Map tab: an interactive map that shows the user's location and the incidents near the
+ * map's center, refreshed every 30 seconds. The Filters dropdown (top left) narrows the
+ * pins with the same filters as the Incidents tab. Long-pressing the map opens a form
  * to report an incident (title, description, type); saving it writes the incident to
  * the database through the API and adds a pin.
  */
@@ -16,22 +17,31 @@ import {
   Pressable,
   StyleSheet,
   TextInput,
+  View,
 } from 'react-native';
 import MapView, { Marker, type LatLng, type Region } from 'react-native-maps';
 
 import { ApiError } from '@/api/client';
 import {
   createIncident,
-  listIncidents,
+  searchIncidents,
   voteIncident,
   type Incident,
   type IncidentType,
 } from '@/api/incidents';
+import {
+  activeFilterCount,
+  DEFAULT_FILTERS,
+  filtersToSearch,
+  IncidentFilterRows,
+  type IncidentFilters,
+} from '@/components/incidents/incident-filters';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Spacing } from '@/constants/theme';
 import { useSession } from '@/hooks/use-session';
 import { useTheme } from '@/hooks/use-theme';
+import { getCurrentCoords } from '@/utils/location';
 
 const INCIDENT_TYPES: { value: IncidentType; label: string }[] = [
   { value: 'crime', label: 'Crime' },
@@ -77,8 +87,8 @@ function formatReportedTime(iso: string): string {
 }
 
 const POLL_INTERVAL_MS = 30_000;
-// The API's maximum search radius. It also returns at most 200 incidents, nearest first.
-const SEARCH_RADIUS_M = 25_000;
+// With Vicinity set to Anywhere, pins load within this distance of the map's center.
+const MAP_AREA_RADIUS_M = 25_000;
 
 export default function MapScreen() {
   const theme = useTheme();
@@ -88,9 +98,13 @@ export default function MapScreen() {
   // null = still asking, true = allowed, false = denied.
   const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
 
-  // Active incidents near the map's center, replaced on every successful fetch.
+  // Incidents matching the filters, replaced on every successful fetch.
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [filters, setFilters] = useState<IncidentFilters>(DEFAULT_FILTERS);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filterCount = activeFilterCount(filters);
 
   // A ref, not state: moving the map shouldn't re-render, only change where we fetch.
   const centerRef = useRef<LatLng>(DEFAULT_REGION);
@@ -99,12 +113,18 @@ export default function MapScreen() {
 
   const loadIncidents = useCallback(async () => {
     const requestId = ++latestRequestRef.current;
-    const { latitude, longitude } = centerRef.current;
     try {
-      const nearby = await listIncidents({
-        lat: latitude,
-        lng: longitude,
-        radiusM: SEARCH_RADIUS_M,
+      // A Vicinity filter is measured from the user, like the Incidents tab; otherwise
+      // load what's around the part of the map being looked at.
+      const userCoords = filters.radiusM ? await getCurrentCoords() : null;
+      const origin = userCoords ?? {
+        lat: centerRef.current.latitude,
+        lng: centerRef.current.longitude,
+      };
+      const nearby = await searchIncidents({
+        ...origin,
+        radiusM: filters.radiusM || MAP_AREA_RADIUS_M,
+        ...filtersToSearch(filters),
       });
       if (requestId !== latestRequestRef.current) return;
       setIncidents(nearby);
@@ -116,7 +136,7 @@ export default function MapScreen() {
       // Keep the pins we already have; the next poll retries.
       setLoadError(e instanceof Error ? e.message : 'Could not load incidents.');
     }
-  }, [markSignedOut]);
+  }, [filters, markSignedOut]);
 
   // Fetch now and every 30s while the Map tab is focused; stop when leaving it.
   useFocusEffect(
@@ -289,12 +309,60 @@ export default function MapScreen() {
             key={incident.id}
             coordinate={{ latitude: incident.lat, longitude: incident.lng }}
             pinColor={incident.type === 'fire' ? 'orange' : 'blue'}
+            opacity={incident.status === 'inactive' ? 0.45 : 1}
             onPress={() => selectIncident(incident)}
           />
         ))}
       </MapView>
 
-      <ThemedView style={styles.banners}>
+      <View style={styles.topLeft}>
+        <Pressable
+          onPress={() => setFiltersOpen((open) => !open)}
+          accessibilityRole="button"
+          accessibilityLabel="Filter incidents"
+          accessibilityState={{ expanded: filtersOpen }}
+          style={({ pressed }) => [
+            styles.filterButton,
+            { backgroundColor: theme.backgroundElement },
+            pressed && styles.pressed,
+          ]}>
+          <ThemedText type="smallBold">
+            Filters{filterCount > 0 ? ` (${filterCount})` : ''} {filtersOpen ? '▴' : '▾'}
+          </ThemedText>
+        </Pressable>
+
+        {filtersOpen && (
+          <ThemedView type="backgroundElement" style={styles.filterPanel}>
+            <IncidentFilterRows filters={filters} onChange={setFilters} />
+            <View style={styles.filterActions}>
+              <Pressable
+                onPress={() => setFilters(DEFAULT_FILTERS)}
+                disabled={filterCount === 0}
+                style={({ pressed }) => [
+                  styles.button,
+                  { backgroundColor: theme.backgroundSelected },
+                  filterCount === 0 && styles.disabled,
+                  pressed && styles.pressed,
+                ]}>
+                <ThemedText type="smallBold">Reset</ThemedText>
+              </Pressable>
+              <Pressable
+                onPress={() => setFiltersOpen(false)}
+                style={({ pressed }) => [
+                  styles.button,
+                  { backgroundColor: theme.text },
+                  pressed && styles.pressed,
+                ]}>
+                <ThemedText type="smallBold" style={{ color: theme.background }}>
+                  Done
+                </ThemedText>
+              </Pressable>
+            </View>
+          </ThemedView>
+        )}
+      </View>
+
+      <ThemedView style={[styles.banners, filtersOpen && styles.hidden]}>
         {permissionGranted === false && (
           <ThemedView type="backgroundElement" style={styles.banner}>
             <ThemedText type="small">
@@ -362,36 +430,42 @@ export default function MapScreen() {
             </ThemedText>
           )}
 
-          <ThemedView type="backgroundElement" style={styles.voteRow}>
-            <Pressable
-              onPress={() => vote(selectedIncident, false)}
-              disabled={voting}
-              style={({ pressed }) => [
-                styles.voteButton,
-                { backgroundColor: theme.backgroundSelected },
-                voting && styles.disabled,
-                pressed && styles.pressed,
-              ]}>
-              <ThemedText type="smallBold">Not there</ThemedText>
-            </Pressable>
-            <Pressable
-              onPress={() => vote(selectedIncident, true)}
-              disabled={voting}
-              style={({ pressed }) => [
-                styles.voteButton,
-                { backgroundColor: theme.text },
-                voting && styles.disabled,
-                pressed && styles.pressed,
-              ]}>
-              {voting ? (
-                <ActivityIndicator color={theme.background} />
-              ) : (
-                <ThemedText type="smallBold" style={{ color: theme.background }}>
-                  Still there
-                </ThemedText>
-              )}
-            </Pressable>
-          </ThemedView>
+          {selectedIncident.status === 'inactive' ? (
+            <ThemedText type="smallBold" themeColor="textSecondary">
+              Resolved: reported as no longer there.
+            </ThemedText>
+          ) : (
+            <ThemedView type="backgroundElement" style={styles.voteRow}>
+              <Pressable
+                onPress={() => vote(selectedIncident, false)}
+                disabled={voting}
+                style={({ pressed }) => [
+                  styles.voteButton,
+                  { backgroundColor: theme.backgroundSelected },
+                  voting && styles.disabled,
+                  pressed && styles.pressed,
+                ]}>
+                <ThemedText type="smallBold">Not there</ThemedText>
+              </Pressable>
+              <Pressable
+                onPress={() => vote(selectedIncident, true)}
+                disabled={voting}
+                style={({ pressed }) => [
+                  styles.voteButton,
+                  { backgroundColor: theme.text },
+                  voting && styles.disabled,
+                  pressed && styles.pressed,
+                ]}>
+                {voting ? (
+                  <ActivityIndicator color={theme.background} />
+                ) : (
+                  <ThemedText type="smallBold" style={{ color: theme.background }}>
+                    Still there
+                  </ThemedText>
+                )}
+              </Pressable>
+            </ThemedView>
+          )}
         </ThemedView>
       )}
 
@@ -526,9 +600,37 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
   },
-  banners: {
+  topLeft: {
     position: 'absolute',
     top: Spacing.six,
+    left: Spacing.three,
+    right: Spacing.three,
+    alignItems: 'flex-start',
+    gap: Spacing.two,
+    zIndex: 1, // the open panel sits above the banners and pin card
+    pointerEvents: 'box-none', // only the button and panel take touches
+  },
+  filterButton: {
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    borderRadius: Spacing.five,
+  },
+  filterPanel: {
+    alignSelf: 'stretch',
+    paddingVertical: Spacing.three,
+    borderRadius: Spacing.three,
+    gap: Spacing.three,
+  },
+  filterActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: Spacing.two,
+    paddingHorizontal: Spacing.three,
+  },
+  banners: {
+    position: 'absolute',
+    // Below the Filters button.
+    top: Spacing.six + Spacing.six,
     left: Spacing.three,
     right: Spacing.three,
     gap: Spacing.two,

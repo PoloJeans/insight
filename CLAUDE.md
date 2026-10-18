@@ -26,7 +26,7 @@ src/
   app/(tabs)/index.tsx      Map screen (+ index.web.tsx placeholder)
   app/(tabs)/incidents.tsx  List of all incidents with type/date/municipality/vicinity/resolved filters
   app/(tabs)/profile.tsx    Incidents you reported and voted on; Sign out
-  components/incidents/     incident-card (list row), filter-chips (single-select chip row)
+  components/incidents/     incident-card (list row), filter-chips (chip row), incident-filters (shared filter state + rows)
   constants/municipalities.ts  The six former municipalities (slug + label), matching the DB
   utils/location.ts  getCurrentCoords(): phone position or null
   hooks/use-session.tsx  SessionProvider/useSession: signedIn state over api/auth.ts
@@ -50,6 +50,7 @@ backend/             AWS CDK app: API Gateway HTTP API + Lambda handlers -> Auro
 3. The form collects **type** (required), **title** (required, max 100 chars), and **description** (optional, max 500 chars).
 4. "Add to map" calls `createIncident`; the pin is added only after the API confirms. On failure the form stays open with an error.
 5. Active incidents within 25 km of the map center are fetched on focus, after each pan/zoom, and every 30 s while the tab is focused (fire pins orange, crime pins blue). A 401 signs the user out.
+6. The Filters dropdown (top left) uses the same filters as the Incidents tab (`components/incidents/incident-filters.tsx`). Vicinity "Anywhere" loads within 25 km of the map center; a set distance is measured from the user's location. Resolved pins (when shown) are faded and have no vote buttons.
 
 ## Gotchas already hit (don't reintroduce)
 

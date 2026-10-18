@@ -10,12 +10,16 @@ import { FlatList, RefreshControl, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ApiError } from '@/api/client';
-import { searchIncidents, type Incident, type IncidentType } from '@/api/incidents';
-import { FilterChips, type ChipOption } from '@/components/incidents/filter-chips';
+import { searchIncidents, type Incident } from '@/api/incidents';
 import { IncidentCard } from '@/components/incidents/incident-card';
+import {
+  DEFAULT_FILTERS,
+  filtersToSearch,
+  IncidentFilterRows,
+  type IncidentFilters,
+} from '@/components/incidents/incident-filters';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { MUNICIPALITIES, type MunicipalitySlug } from '@/constants/municipalities';
 import { BottomTabInset, Spacing } from '@/constants/theme';
 import { useSession } from '@/hooks/use-session';
 import { useTheme } from '@/hooks/use-theme';
@@ -24,50 +28,11 @@ import { getCurrentCoords, type Coords } from '@/utils/location';
 // Distances are measured from here when location is off.
 const DOWNTOWN_TORONTO: Coords = { lat: 43.6532, lng: -79.3832 };
 
-const HOUR_MS = 60 * 60 * 1000;
-
-const TYPE_OPTIONS: ChipOption<'all' | IncidentType>[] = [
-  { value: 'all', label: 'All' },
-  { value: 'fire', label: 'Fire' },
-  { value: 'crime', label: 'Crime' },
-];
-
-// Values are how far back to look, in hours; 0 = any time.
-const DATE_OPTIONS: ChipOption<number>[] = [
-  { value: 0, label: 'Any time' },
-  { value: 24, label: 'Last 24 h' },
-  { value: 24 * 7, label: 'Last 7 days' },
-  { value: 24 * 30, label: 'Last 30 days' },
-];
-
-const MUNICIPALITY_OPTIONS: ChipOption<'all' | MunicipalitySlug>[] = [
-  { value: 'all', label: 'All' },
-  ...MUNICIPALITIES.map((m) => ({ value: m.slug, label: m.label })),
-];
-
-// Radius in meters; 0 = anywhere.
-const VICINITY_OPTIONS: ChipOption<number>[] = [
-  { value: 0, label: 'Anywhere' },
-  { value: 1_000, label: 'Within 1 km' },
-  { value: 5_000, label: 'Within 5 km' },
-  { value: 10_000, label: 'Within 10 km' },
-  { value: 25_000, label: 'Within 25 km' },
-];
-
-const RESOLVED_OPTIONS: ChipOption<'hide' | 'show'>[] = [
-  { value: 'hide', label: 'Hide' },
-  { value: 'show', label: 'Show' },
-];
-
 export default function IncidentsScreen() {
   const theme = useTheme();
   const { markSignedOut } = useSession();
 
-  const [type, setType] = useState<'all' | IncidentType>('all');
-  const [sinceHours, setSinceHours] = useState(0);
-  const [municipality, setMunicipality] = useState<'all' | MunicipalitySlug>('all');
-  const [radiusM, setRadiusM] = useState(0);
-  const [resolved, setResolved] = useState<'hide' | 'show'>('hide');
+  const [filters, setFilters] = useState<IncidentFilters>(DEFAULT_FILTERS);
 
   // null = first load still running.
   const [incidents, setIncidents] = useState<Incident[] | null>(null);
@@ -85,11 +50,8 @@ export default function IncidentsScreen() {
       const origin = coords ?? DOWNTOWN_TORONTO;
       const results = await searchIncidents({
         ...origin,
-        radiusM: radiusM || undefined,
-        type: type === 'all' ? undefined : type,
-        municipality: municipality === 'all' ? undefined : municipality,
-        since: sinceHours ? new Date(Date.now() - sinceHours * HOUR_MS) : undefined,
-        includeResolved: resolved === 'show',
+        radiusM: filters.radiusM || undefined,
+        ...filtersToSearch(filters),
       });
       if (requestId !== latestRequestRef.current) return;
       setIncidents(results);
@@ -100,7 +62,7 @@ export default function IncidentsScreen() {
       if (e instanceof ApiError && e.status === 401) return markSignedOut();
       setError(e instanceof Error ? e.message : 'Could not load incidents.');
     }
-  }, [type, sinceHours, municipality, radiusM, resolved, markSignedOut]);
+  }, [filters, markSignedOut]);
 
   // Runs on focus and again whenever a filter changes (load is recreated).
   useFocusEffect(
@@ -115,21 +77,6 @@ export default function IncidentsScreen() {
     setRefreshing(false);
   };
 
-  const filters = (
-    <View style={styles.filters}>
-      <FilterChips label="Type" options={TYPE_OPTIONS} value={type} onChange={setType} />
-      <FilterChips label="Date" options={DATE_OPTIONS} value={sinceHours} onChange={setSinceHours} />
-      <FilterChips
-        label="Area"
-        options={MUNICIPALITY_OPTIONS}
-        value={municipality}
-        onChange={setMunicipality}
-      />
-      <FilterChips label="Vicinity" options={VICINITY_OPTIONS} value={radiusM} onChange={setRadiusM} />
-      <FilterChips label="Resolved" options={RESOLVED_OPTIONS} value={resolved} onChange={setResolved} />
-    </View>
-  );
-
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView edges={['top']} style={styles.container}>
@@ -141,7 +88,9 @@ export default function IncidentsScreen() {
             </ThemedText>
           )}
         </View>
-        {filters}
+        <View style={styles.filters}>
+          <IncidentFilterRows filters={filters} onChange={setFilters} />
+        </View>
         {usingFallbackLocation && (
           <ThemedText type="small" themeColor="textSecondary" style={styles.note}>
             Location is off, so distances are from downtown Toronto.
@@ -185,7 +134,6 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.two,
   },
   filters: {
-    gap: Spacing.two,
     paddingBottom: Spacing.three,
   },
   note: {
