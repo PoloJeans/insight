@@ -96,6 +96,19 @@ export default function MapScreen() {
     }, [loadIncidents])
   );
 
+  // The pin the user tapped. While this is set, its card with the vote buttons is shown.
+  const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
+
+  // TODO: call voteIncident(incident.id, true), then refresh the pins.
+  const markStillThere = (incident: Incident) => {
+    setSelectedIncident(null);
+  };
+
+  // TODO: call voteIncident(incident.id, false), then refresh the pins.
+  const markNotThere = (incident: Incident) => {
+    setSelectedIncident(null);
+  };
+
   // Where the user long-pressed. While this is set, the form is open.
   const [pendingCoordinate, setPendingCoordinate] = useState<LatLng | null>(null);
 
@@ -195,6 +208,11 @@ export default function MapScreen() {
           centerRef.current = { latitude: region.latitude, longitude: region.longitude };
           loadIncidents();
         }}
+        onPress={(e) => {
+          // On iOS a marker tap also reaches the map; only a tap on empty map closes the card.
+          if (e.nativeEvent?.action === 'marker-press') return;
+          setSelectedIncident(null);
+        }}
         onLongPress={(e) => {
           // Copy the coordinate out of the event right away: React Native clears "e"
           // after this handler returns, so it can't be read later.
@@ -206,9 +224,8 @@ export default function MapScreen() {
           <Marker
             key={incident.id}
             coordinate={{ latitude: incident.lat, longitude: incident.lng }}
-            title={incident.title}
-            description={incident.description || undefined}
             pinColor={incident.type === 'fire' ? 'orange' : 'blue'}
+            onPress={() => setSelectedIncident(incident)}
           />
         ))}
       </MapView>
@@ -230,7 +247,62 @@ export default function MapScreen() {
         )}
       </ThemedView>
 
-      <ThemedView style={styles.controls}>
+      {selectedIncident && (
+        <ThemedView type="backgroundElement" style={styles.incidentCard}>
+          <ThemedView type="backgroundElement" style={styles.incidentHeader}>
+            <ThemedText type="smallBold" themeColor="textSecondary">
+              {selectedIncident.type === 'fire' ? 'Fire' : 'Crime'}
+            </ThemedText>
+            <Pressable
+              onPress={() => setSelectedIncident(null)}
+              hitSlop={12}
+              style={({ pressed }) => pressed && styles.pressed}>
+              <ThemedText type="smallBold" themeColor="textSecondary">
+                Close
+              </ThemedText>
+            </Pressable>
+          </ThemedView>
+
+          <ThemedText type="smallBold" style={styles.incidentTitle}>
+            {selectedIncident.title || 'Untitled incident'}
+          </ThemedText>
+          {selectedIncident.description && (
+            <ThemedText type="small" themeColor="textSecondary">
+              {selectedIncident.description}
+            </ThemedText>
+          )}
+          {selectedIncident.confirms !== undefined && (
+            <ThemedText type="small" themeColor="textSecondary">
+              {selectedIncident.confirms} still there · {selectedIncident.denies ?? 0} not there
+            </ThemedText>
+          )}
+
+          <ThemedView type="backgroundElement" style={styles.voteRow}>
+            <Pressable
+              onPress={() => markNotThere(selectedIncident)}
+              style={({ pressed }) => [
+                styles.voteButton,
+                { backgroundColor: theme.backgroundSelected },
+                pressed && styles.pressed,
+              ]}>
+              <ThemedText type="smallBold">Not there</ThemedText>
+            </Pressable>
+            <Pressable
+              onPress={() => markStillThere(selectedIncident)}
+              style={({ pressed }) => [
+                styles.voteButton,
+                { backgroundColor: theme.text },
+                pressed && styles.pressed,
+              ]}>
+              <ThemedText type="smallBold" style={{ color: theme.background }}>
+                Still there
+              </ThemedText>
+            </Pressable>
+          </ThemedView>
+        </ThemedView>
+      )}
+
+      <ThemedView style={[styles.controls, selectedIncident && styles.hidden]}>
         {permissionGranted && (
           <Pressable
             onPress={centerOnUser}
@@ -390,6 +462,39 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     alignItems: 'flex-end',
     backgroundColor: 'transparent',
+  },
+  hidden: {
+    display: 'none',
+  },
+  incidentCard: {
+    position: 'absolute',
+    left: Spacing.three,
+    right: Spacing.three,
+    bottom: BottomTabInset + Spacing.three,
+    padding: Spacing.three,
+    borderRadius: Spacing.three,
+    gap: Spacing.two,
+    boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2)',
+  },
+  incidentHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  incidentTitle: {
+    fontSize: 18,
+    lineHeight: 24,
+  },
+  voteRow: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+    marginTop: Spacing.one,
+  },
+  voteButton: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: Spacing.three,
+    borderRadius: Spacing.three,
   },
   button: {
     paddingHorizontal: Spacing.four,
