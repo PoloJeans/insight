@@ -145,9 +145,6 @@ export default function MapScreen() {
       .catch((e) => console.warn('Could not look up address', e));
   }, [selectedIncident, selectedAddress]);
 
-  // TODO: call voteIncident(incident.id, true), then refresh the pins.
-  const markStillThere = (incident: Incident) => {
-    setSelectedIncident(null);
   const [voting, setVoting] = useState(false);
   const [voteError, setVoteError] = useState<string | null>(null);
 
