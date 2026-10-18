@@ -70,7 +70,7 @@ export async function createIncident(input: {
   return toIncident(await request<IncidentRow>('POST', '/incidents', { body: input }));
 }
 
-/** `stillThere: true` confirms the incident; `false` reports it gone. Enough "gone" votes deactivate it. */
+/** `stillThere: true` confirms the incident; `false` reports it gone, which deactivates it. */
 export async function voteIncident(
   id: string,
   stillThere: boolean,
