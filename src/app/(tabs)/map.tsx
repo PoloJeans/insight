@@ -45,6 +45,36 @@ const DEFAULT_REGION: Region = {
   longitudeDelta: 0.05,
 };
 
+// e.g. "123 Queen St W, Toronto". Null when the lookup found nothing usable.
+function formatAddress(address: Location.LocationGeocodedAddress | undefined): string | null {
+  if (!address) return null;
+  if (address.formattedAddress) return address.formattedAddress; // Android only
+  const street = [address.streetNumber, address.street].filter(Boolean).join(' ');
+  const parts = [street || address.name, address.city].filter(Boolean);
+  return parts.length > 0 ? parts.join(', ') : null;
+}
+
+// e.g. "12 min ago · Oct 17, 3:42 PM".
+function formatReportedTime(iso: string): string {
+  const date = new Date(iso);
+  const minutes = Math.floor((Date.now() - date.getTime()) / 60_000);
+  const relative =
+    minutes < 1
+      ? 'Just now'
+      : minutes < 60
+        ? `${minutes} min ago`
+        : minutes < 24 * 60
+          ? `${Math.floor(minutes / 60)} h ago`
+          : `${Math.floor(minutes / (24 * 60))} d ago`;
+  const absolute = date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  return `${relative} · ${absolute}`;
+}
+
 const POLL_INTERVAL_MS = 30_000;
 // The API's maximum search radius. It also returns at most 200 incidents, nearest first.
 const SEARCH_RADIUS_M = 25_000;
@@ -98,6 +128,21 @@ export default function MapScreen() {
 
   // The pin the user tapped. While this is set, its card with the vote buttons is shown.
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
+
+  // Street addresses by incident id, so reopening a pin doesn't geocode again.
+  // null = looked up but nothing found; missing = not looked up yet.
+  const [addresses, setAddresses] = useState<Record<string, string | null>>({});
+  const selectedId = selectedIncident?.id;
+  const selectedAddress = selectedId ? addresses[selectedId] : undefined;
+
+  useEffect(() => {
+    if (!selectedIncident || selectedAddress !== undefined) return;
+    const { id, lat, lng } = selectedIncident;
+    Location.reverseGeocodeAsync({ latitude: lat, longitude: lng })
+      .then((results) => setAddresses((prev) => ({ ...prev, [id]: formatAddress(results[0]) })))
+      // Leave the address blank; tapping the pin again retries.
+      .catch((e) => console.warn('Could not look up address', e));
+  }, [selectedIncident, selectedAddress]);
 
   // TODO: call voteIncident(incident.id, true), then refresh the pins.
   const markStillThere = (incident: Incident) => {
@@ -266,6 +311,14 @@ export default function MapScreen() {
           <ThemedText type="smallBold" style={styles.incidentTitle}>
             {selectedIncident.title || 'Untitled incident'}
           </ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">
+            Reported {formatReportedTime(selectedIncident.createdAt)}
+          </ThemedText>
+          {selectedAddress && (
+            <ThemedText type="small" themeColor="textSecondary">
+              {selectedAddress}
+            </ThemedText>
+          )}
           {selectedIncident.description && (
             <ThemedText type="small" themeColor="textSecondary">
               {selectedIncident.description}
